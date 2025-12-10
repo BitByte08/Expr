@@ -23,6 +23,7 @@ def fetch_champion_ddragon(champion: str) -> Dict[str,str]:
     ver = _get_latest_version()
     base = f"{DDRAGON_CDN}/cdn/{ver}/data/en_US/champion"
     url = f"{base}/{champion}.json"
+    print(champion)
     r = requests.get(url, timeout=10)
     r.raise_for_status()
     data = r.json()
