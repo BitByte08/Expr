@@ -178,7 +178,6 @@ const loadSession = (session: ChatSession) => {
         <div class="chat-shell">
             <header class="chat-header">
                 <button class="back-btn" @click="goBack">← 뒤로가기</button>
-                <div class="title">ai</div>
             </header>
 
             <div class="chat-window" ref="messageRef">
