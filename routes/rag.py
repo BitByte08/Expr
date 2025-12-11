@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
@@ -37,6 +38,32 @@ def reorder_skill_order(skills: List[str]) -> List[str]:
 
 
 # ------------------------
+# 간단 웹 검색 스크랩 (DuckDuckGo 비공식 JSON 엔드포인트)
+# ------------------------
+def scrape_search(champion: str, question: str, n_results: int = 3) -> List[dict]:
+    query = f"{champion} {question}"
+    url = "https://ddg-webapp-aagd.vercel.app/search"
+    params = {"q": query, "max_results": n_results}
+
+    try:
+        resp = requests.get(url, params=params, timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        for item in data:
+            results.append({
+                "title": item.get("title"),
+                "url": item.get("href"),
+                "snippet": item.get("body"),
+                "source": "duckduckgo",
+            })
+        return results
+    except Exception as e:
+        logger.warning(f"search scrape error: {e}")
+        return []
+
+
+# ------------------------
 # Main RAG Route (Gemini 제거)
 # ------------------------
 @router.post("")
@@ -46,9 +73,6 @@ def rag(req: RagRequest):
     # 한글 챔프이면 영어로 변환
     if champion in champion_kor_to_en:
         champion = champion_kor_to_en[champion]
-
-    question = req.question
-    n = req.n_results
 
     question = req.question
     n = req.n_results
@@ -63,7 +87,7 @@ def rag(req: RagRequest):
         docs = []
 
     # ----------------------------
-    # 2) 자동 동기화: DDragon + FOW
+    # 2) 자동 동기화: DDragon + FOW + Search
     # ----------------------------
     new_data = {}
 
@@ -86,6 +110,14 @@ def rag(req: RagRequest):
             new_data["FOW"] = fow
     except Exception as e:
         logger.warning(f"fow fetch error: {e}")
+
+    # Web Search
+    try:
+        web = scrape_search(champion, question, n_results=n)
+        if web:
+            new_data["search"] = web
+    except Exception as e:
+        logger.warning(f"web search error: {e}")
 
     # ----------------------------
     # 3) DB 업데이트 (JSON 문자열로 저장)

@@ -4,8 +4,8 @@ from models.account import AccountDTO
 router = APIRouter()
 
 @router.get("/{game_name}/{tag_line}", response_model=AccountDTO)
-def get_account_riot_id(game_name: str, tag_line: str):
-    return get_account_by_riot_id(game_name, tag_line)
+async def get_account_riot_id(game_name: str, tag_line: str):
+    return await get_account_by_riot_id(game_name, tag_line)
 @router.get("/{puuid}", response_model=AccountDTO)
-def get_account_puuid(puuid: str):
-    return get_account_by_puuid(puuid)
+async def get_account_puuid(puuid: str):
+    return await get_account_by_puuid(puuid)
