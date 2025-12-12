@@ -235,7 +235,7 @@ app.get('/api/chat', async (req: Request, res: Response) => {
     const systemPrompt = {
       role: 'system',
       content:
-        'You are a Riot/League of Legends assistant. Only answer questions about Riot games, League of Legends data, matches, champions, runes, items, and related esports. If the user asks anything unrelated, politely refuse and ask them to stay on Riot topics. Keep answers concise.\n\nSession Summary: ' + prior,
+        '당신은 라이엇 게임즈/리그 오브 레전드 전문 어시스턴트입니다. 라이엇 게임즈, 리그 오브 레전드 데이터, 경기 기록, 챔피언, 룬, 아이템, e스포츠에 관한 질문에만 답변하세요. 관련 없는 질문은 정중히 거절하고 롤 관련 주제로 유도하세요. 답변은 간결하고 명확하게 한글로 작성하세요.\n\n세션 요약: ' + prior,
     };
 
     const trimmedHistory = chatHistory.slice(-MAX_CONTEXT_MESSAGES);
@@ -263,24 +263,9 @@ app.get('/api/chat', async (req: Request, res: Response) => {
       const text = comp.choices?.[0]?.message?.content || '';
       const clipped = (Array.isArray(text) ? text.map((t: any) => (typeof t === 'string' ? t : t?.text)).join('') : (text as string)).slice(0, 800);
       sessionMemory.set(sessionId, { summary: clipped });
-      // Persist summary to KV for durability
-      await MEMORY_KV.put(`session:${sessionId}:summary`, JSON.stringify({ summary: clipped, updatedAt: Date.now() }));
-      // Ensure table exists and log to D1
-      await CHAT_DB.exec(`
-        CREATE TABLE IF NOT EXISTS messages (
-          id TEXT PRIMARY KEY,
-          session_id TEXT,
-          role TEXT,
-          content TEXT,
-          created_at INTEGER
-        );
-      `);
-      const now = Date.now();
-      // Store last user message and assistant summary for audit
-      await CHAT_DB.prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(`u-${sessionId}-${now}`, sessionId, 'user', prompt, now).run();
-      await CHAT_DB.prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
-        .bind(`s-${sessionId}-${now}`, sessionId, 'assistant_summary', clipped, now).run();
+      // TODO: KV/D1 storage disabled temporarily (binding issues)
+      // await MEMORY_KV.put(`session:${sessionId}:summary`, JSON.stringify({ summary: clipped, updatedAt: Date.now() }));
+      // await CHAT_DB.exec(...);
     } catch (e) {
       // ignore
     }
