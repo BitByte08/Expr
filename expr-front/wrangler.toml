@@ -1,0 +1,11 @@
+name = "expr-front"
+compatibility_date = "2025-12-12"
+
+[build]
+command = "npm run build"
+
+[env.production]
+name = "expr-front-prod"
+
+[assets]
+directory = "./dist"
