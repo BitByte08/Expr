@@ -104,7 +104,8 @@ const connectSSE = (prompt: string) => {
             text: m.text.slice(-MAX_HISTORY_TEXT_LENGTH),
         }));
     const historyParam = encodeURIComponent(JSON.stringify(trimmedHistory));
-    const eventSource = new EventSource(`http://localhost:8080/api/chat?prompt=${encodeURIComponent(prompt)}&history=${historyParam}`);
+    // Pages Functions/Workers 프록시 경로 사용
+    const eventSource = new EventSource(`/api/chat?prompt=${encodeURIComponent(prompt)}&history=${historyParam}`);
 
     eventSource.addEventListener("status", (event) => {
         try {
