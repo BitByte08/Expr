@@ -229,12 +229,18 @@ app.get('/api/chat', async (req: Request, res: Response) => {
     };
 
     // 이전 메시지를 system 역할로 변환하여 컨텍스트 유지 (최근 N개만 사용)
+    const systemPrompt = {
+      role: 'system',
+      content:
+        'You are a Riot/League of Legends assistant. Only answer questions about Riot games, League of Legends data, matches, champions, runes, items, and related esports. If the user asks anything unrelated, politely refuse and ask them to stay on Riot topics. Keep answers concise.',
+    };
+
     const trimmedHistory = chatHistory.slice(-MAX_CONTEXT_MESSAGES);
     const contextMessages = trimmedHistory.map((msg: any) => ({
       role: msg.sender === 'user' ? 'user' : 'assistant',
       content: msg.text,
     }));
-    const allMessages = [...contextMessages, { role: 'user', content: prompt }];
+    const allMessages = [systemPrompt, ...contextMessages, { role: 'user', content: prompt }];
     
     await runChat(allMessages);
     res.write(`event: status\ndata: ${JSON.stringify({ status: 'STREAMING_END' })}\n\n`);
