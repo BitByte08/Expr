@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import FastApiMCP
 import uvicorn
 from routes.account import router as account_router
@@ -6,6 +7,18 @@ from routes.league import router as league_router
 from routes.match import router as match_router
 from routes.rag import router as rag_router
 app = FastAPI()
+
+# CORS: allow only frontend origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://expr.bitworkspace.kr",
+        "https://mcp-worker.bitbyte08.workers.dev",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(account_router, prefix="/account", tags=["account"])
 app.include_router(league_router, prefix="/league", tags=["league"])
 app.include_router(match_router, prefix="/match", tags=["match"])
