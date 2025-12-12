@@ -5,6 +5,8 @@ import { useRouter, useRoute } from "vue-router";
 
 type ChatMessage = { sender: "user" | "ai"; text: string };
 type ChatSession = { id: string; title: string; messages: ChatMessage[] };
+const MAX_HISTORY_ITEMS = 10;
+const MAX_HISTORY_TEXT_LENGTH = 1200;
 
 const STORAGE_KEY = "chat_sessions_v1";
 const router = useRouter();
@@ -14,7 +16,7 @@ const userInput = ref("");
 const messages = ref<ChatMessage[]>([]);
 const isLoading = ref(false);
 const messageRef = ref<HTMLElement | null>(null);
-let currentAiMessage: ChatMessage | null = null;
+const currentAiMessage = ref<ChatMessage | null>(null);
 const sessions = ref<ChatSession[]>([]);
 const currentSessionId = ref<string | null>(null);
 
@@ -87,13 +89,21 @@ const scrollToBottom = () => {
 };
 
 const connectSSE = (prompt: string) => {
-    currentAiMessage = { sender: "ai", text: "" };
+    currentAiMessage.value = { sender: "ai", text: "" };
     isLoading.value = true;
-    messages.value.push(currentAiMessage);
+    if (currentAiMessage.value) {
+        messages.value.push(currentAiMessage.value);
+    }
 
     // 이전 메시지를 히스토리로 전송 (로딩 중인 AI 메시지 제외)
-    const history = messages.value.slice(0, -1);
-    const historyParam = encodeURIComponent(JSON.stringify(history));
+    const historyRaw = messages.value.slice(0, -1);
+    const trimmedHistory = historyRaw
+        .slice(-MAX_HISTORY_ITEMS)
+        .map((m) => ({
+            sender: m.sender,
+            text: m.text.slice(-MAX_HISTORY_TEXT_LENGTH),
+        }));
+    const historyParam = encodeURIComponent(JSON.stringify(trimmedHistory));
     const eventSource = new EventSource(`http://localhost:8080/api/chat?prompt=${encodeURIComponent(prompt)}&history=${historyParam}`);
 
     eventSource.addEventListener("status", (event) => {
@@ -111,8 +121,8 @@ const connectSSE = (prompt: string) => {
     eventSource.addEventListener("chunk", (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (currentAiMessage && data?.text) {
-                currentAiMessage.text += data.text;
+            if (currentAiMessage.value && data?.text) {
+                currentAiMessage.value.text += data.text;
                 // 배열 참조를 갱신해 뷰 업데이트를 확실히 반영
                 messages.value = [...messages.value];
                 nextTick(() => scrollToBottom());
@@ -126,8 +136,8 @@ const connectSSE = (prompt: string) => {
     eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (currentAiMessage && data?.text) {
-                currentAiMessage.text += data.text;
+            if (currentAiMessage.value && data?.text) {
+                currentAiMessage.value.text += data.text;
                 messages.value = [...messages.value];
                 scrollToBottom();
             }
@@ -140,8 +150,8 @@ const connectSSE = (prompt: string) => {
         console.error("SSE Error:", error);
         eventSource.close();
         isLoading.value = false;
-        if (currentAiMessage && currentAiMessage.text === "") {
-            currentAiMessage.text = "⚠️ 서버와의 연결이 끊겼거나 오류가 발생했습니다.";
+        if (currentAiMessage.value && currentAiMessage.value.text === "") {
+            currentAiMessage.value.text = "⚠️ 서버와의 연결이 끊겼거나 오류가 발생했습니다.";
         }
     };
 };

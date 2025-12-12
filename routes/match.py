@@ -65,12 +65,17 @@ def _pick_me(info: dict, puuid: str | None = None, game_name: str | None = None,
         return None
 
     participants = info.get("participants", []) or []
+    game_norm = game_name.strip().lower() if game_name else None
+    tag_norm = tag_line.strip().lower() if tag_line else None
     for p in participants:
         if puuid and p.get("puuid") == puuid:
             return p
     for p in participants:
-        if game_name and tag_line and p.get("riotIdGameName") == game_name and p.get("riotIdTagline") == tag_line:
-            return p
+        if game_norm and tag_norm:
+            pname = (p.get("riotIdGameName") or p.get("summonerName") or "").strip().lower()
+            ptag = (p.get("riotIdTagline") or "").strip().lower()
+            if pname == game_norm and ptag == tag_norm:
+                return p
     return None
 
 
@@ -107,12 +112,12 @@ async def get_match_detail_all(game_name: str, tag_line: str, limit: int = 10):
     account = await get_account_by_riot_id(game_name, tag_line)
     match_ids = await get_match_ids_by_puuid(account.puuid)
 
-    # 최근 N개만 사용 (기본 1개, 상한 2개로 제한)
-    safe_limit = max(1, min(limit, 5))
+    # 최근 N개만 사용 (상한 3개로 제한하여 응답 속도 확보)
+    safe_limit = max(1, min(limit, 3))
     match_ids = match_ids[:safe_limit]
 
     tasks = [limited_match_detail(mid) for mid in match_ids]
     match_details = await asyncio.gather(*tasks)
 
     # 필요 필드만 남긴 슬림 버전 반환
-    return [_slim_match(m, game_name=game_name, tag_line=tag_line) for m in match_details]
+    return [_slim_match(m, puuid=account.puuid, game_name=game_name, tag_line=tag_line) for m in match_details]
