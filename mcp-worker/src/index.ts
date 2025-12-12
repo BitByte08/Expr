@@ -15,9 +15,16 @@ const MAX_CONTEXT_MESSAGES = 12;
 // Simple in-memory session memory (non-durable)
 const sessionMemory = new Map<string, { summary: string }>();
 
-// KV/D1 bindings (provided by wrangler.jsonc)
-declare const MEMORY_KV: KVNamespace;
-declare const CHAT_DB: D1Database;
+// Global env storage (set by fetch handler)
+let workerEnv: any = null;
+
+function getKV(): KVNamespace | null {
+  return workerEnv?.MEMORY_KV || null;
+}
+
+function getDB(): D1Database | null {
+  return workerEnv?.CHAT_DB || null;
+}
 
 app.use(cors({ origin: 'https://expr.bitworkspace.kr' }));
 
@@ -263,9 +270,33 @@ app.get('/api/chat', async (req: Request, res: Response) => {
       const text = comp.choices?.[0]?.message?.content || '';
       const clipped = (Array.isArray(text) ? text.map((t: any) => (typeof t === 'string' ? t : t?.text)).join('') : (text as string)).slice(0, 800);
       sessionMemory.set(sessionId, { summary: clipped });
-      // TODO: KV/D1 storage disabled temporarily (binding issues)
-      // await MEMORY_KV.put(`session:${sessionId}:summary`, JSON.stringify({ summary: clipped, updatedAt: Date.now() }));
-      // await CHAT_DB.exec(...);
+      // Persist to KV/D1
+      const kv = getKV();
+      const db = getDB();
+      if (kv && db) {
+        try {
+          await kv.put(`session:${sessionId}:summary`, JSON.stringify({ summary: clipped, updatedAt: Date.now() }));
+          await db.exec(`
+            CREATE TABLE IF NOT EXISTS messages (
+              id TEXT PRIMARY KEY,
+              session_id TEXT,
+              role TEXT,
+              content TEXT,
+              created_at INTEGER
+            );
+          `);
+          const now = Date.now();
+          await db.prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(`u-${sessionId}-${now}`, sessionId, 'user', prompt, now).run();
+          await db.prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(`s-${sessionId}-${now}`, sessionId, 'assistant_summary', clipped, now).run();
+          console.log('[Storage] Saved to KV/D1:', sessionId);
+        } catch (storageErr) {
+          console.error('[Storage Error]', storageErr);
+        }
+      } else {
+        console.warn('[Storage] KV/D1 not available');
+      }
     } catch (e) {
       // ignore
     }
@@ -288,4 +319,12 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 app.listen(PORT);
-export default httpServerHandler({ port: PORT });
+
+const handler = httpServerHandler({ port: PORT });
+
+export default {
+  async fetch(request: Request, env: any, ctx: ExecutionContext) {
+    workerEnv = env;
+    return handler.fetch!(request, env, ctx);
+  }
+};
