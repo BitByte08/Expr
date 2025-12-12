@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+fastapi-mcp
+httpx
+requests
+chromadb
+python-dotenv
+pydantic
