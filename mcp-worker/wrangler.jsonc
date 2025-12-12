@@ -2,7 +2,7 @@
  * For more details on how to configure Wrangler, refer to:
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
-{  
+{
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -10,10 +10,22 @@
 	"name": "mcp-worker",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-12-12",
-	
 	"observability": {
 		"enabled": true
-	}
+	},
+	"kv_namespaces": [
+		{
+			"binding": "MEMORY_KV",
+			"id": "b5b478e5d7af45ca892b7e08be7e259e"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "CHAT_DB",
+			"database_name": "CHAT_DB",
+			"database_id": "7044a3cb-94d4-4e6b-ac9c-f5d8474b184d"
+		}
+	]
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

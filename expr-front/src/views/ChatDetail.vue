@@ -104,8 +104,9 @@ const connectSSE = (prompt: string) => {
             text: m.text.slice(-MAX_HISTORY_TEXT_LENGTH),
         }));
     const historyParam = encodeURIComponent(JSON.stringify(trimmedHistory));
-    // Cloudflare Worker MCP 클라이언트로 직접 연결
-    const eventSource = new EventSource(`https://mcp-worker.bitbyte08.workers.dev/api/chat?prompt=${encodeURIComponent(prompt)}&history=${historyParam}`);
+    const sid = currentSessionId.value || `${Date.now()}`;
+    // Cloudflare Worker MCP 클라이언트로 직접 연결, 세션 ID 포함
+    const eventSource = new EventSource(`https://mcp-worker.bitbyte08.workers.dev/api/chat?prompt=${encodeURIComponent(prompt)}&history=${historyParam}&sid=${encodeURIComponent(sid)}`);
 
     eventSource.addEventListener("status", (event) => {
         try {

@@ -1,4 +1,5 @@
 import { httpServerHandler } from 'cloudflare:node';
+import {env} from 'cloudflare:workers';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -8,9 +9,15 @@ import Groq from 'groq-sdk';
 const app = express();
 const PORT = 3000;
 const MCP_SERVER_URL = 'https://port-0-expr-mj2a706qacdc1bb8.sel3.cloudtype.app/mcp';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+const GROQ_API_KEY = env.GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = env.GROQ_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const MAX_CONTEXT_MESSAGES = 12;
+// Simple in-memory session memory (non-durable)
+const sessionMemory = new Map<string, { summary: string }>();
+
+// KV/D1 bindings (provided by wrangler.jsonc)
+declare const MEMORY_KV: KVNamespace;
+declare const CHAT_DB: D1Database;
 
 app.use(cors({ origin: 'https://expr.bitworkspace.kr' }));
 
@@ -57,6 +64,7 @@ app.get('/api/chat', async (req: Request, res: Response) => {
 
   const prompt = req.query.prompt as string;
   const historyJson = req.query.history as string;
+  const sessionId = (req.query.sid as string) || 'default';
 
   if (!prompt) {
     res.write(`event: error\ndata: ${JSON.stringify({ error: 'Prompt is required' })}\n\n`);
@@ -223,10 +231,11 @@ app.get('/api/chat', async (req: Request, res: Response) => {
     };
 
     // 이전 메시지를 system 역할로 변환하여 컨텍스트 유지 (최근 N개만 사용)
+    const prior = sessionMemory.get(sessionId)?.summary || '';
     const systemPrompt = {
       role: 'system',
       content:
-        'You are a Riot/League of Legends assistant. Only answer questions about Riot games, League of Legends data, matches, champions, runes, items, and related esports. If the user asks anything unrelated, politely refuse and ask them to stay on Riot topics. Keep answers concise.',
+        'You are a Riot/League of Legends assistant. Only answer questions about Riot games, League of Legends data, matches, champions, runes, items, and related esports. If the user asks anything unrelated, politely refuse and ask them to stay on Riot topics. Keep answers concise.\n\nSession Summary: ' + prior,
     };
 
     const trimmedHistory = chatHistory.slice(-MAX_CONTEXT_MESSAGES);
@@ -238,6 +247,43 @@ app.get('/api/chat', async (req: Request, res: Response) => {
 
     await runChat(allMessages);
     res.write(`event: status\ndata: ${JSON.stringify({ status: 'STREAMING_END' })}\n\n`);
+
+    // Update session summary (non-streaming)
+    try {
+      const summaryPrompt = [
+        { role: 'system', content: 'Summarize the conversation so far into 4-6 concise bullet points focusing on user intent, preferences, named entities (player, champion), and any constraints. Keep under 600 characters. Output plain text bullets only.' },
+        ...contextMessages,
+        { role: 'user', content: prompt },
+      ];
+      const comp: any = await groq.chat.completions.create({
+        model: GROQ_MODEL,
+        stream: false,
+        messages: summaryPrompt,
+      } as any);
+      const text = comp.choices?.[0]?.message?.content || '';
+      const clipped = (Array.isArray(text) ? text.map((t: any) => (typeof t === 'string' ? t : t?.text)).join('') : (text as string)).slice(0, 800);
+      sessionMemory.set(sessionId, { summary: clipped });
+      // Persist summary to KV for durability
+      await MEMORY_KV.put(`session:${sessionId}:summary`, JSON.stringify({ summary: clipped, updatedAt: Date.now() }));
+      // Ensure table exists and log to D1
+      await CHAT_DB.exec(`
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT,
+          role TEXT,
+          content TEXT,
+          created_at INTEGER
+        );
+      `);
+      const now = Date.now();
+      // Store last user message and assistant summary for audit
+      await CHAT_DB.prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(`u-${sessionId}-${now}`, sessionId, 'user', prompt, now).run();
+      await CHAT_DB.prepare('INSERT INTO messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)')
+        .bind(`s-${sessionId}-${now}`, sessionId, 'assistant_summary', clipped, now).run();
+    } catch (e) {
+      // ignore
+    }
   } catch (error) {
     console.error('[Fatal Error]', error);
     const msg = error instanceof Error ? error.message : String(error);
@@ -252,7 +298,7 @@ app.get('/api/chat', async (req: Request, res: Response) => {
 });
 
 // Health check endpoint
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'expr-worker' });
 });
 
